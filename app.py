@@ -16,182 +16,152 @@ def get_db_connection():
     )
 
 
-# ----------------------
-# HELPER FUNCTIONS
-# ----------------------
-def register_user(full_name):
+
+# ==========================
+# DATABASE FUNCTIONS
+# ==========================
+def get_last_punch(user_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO user (full_name) VALUES (%s)", (full_name,))
-    conn.commit()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT punch_type FROM punch_record
+        WHERE user_id = %s
+        ORDER BY punch_time DESC
+        LIMIT 1
+    """, (user_id,))
+    row = cursor.fetchone()
     cursor.close()
     conn.close()
+    return row["punch_type"] if row else None
 
-
-def get_users():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, full_name FROM user")
-    users = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return users
-
-
-def get_last_punch_type(user_id):
+def punch(user_id, punch_type, lat, long):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT punch_type 
-        FROM punch_record 
-        WHERE user_id = %s 
-        ORDER BY punch_time DESC 
-        LIMIT 1
-    """, (user_id,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return result[0] if result else None
-
-
-def punch(user_id, punch_type, lat=None, long=None):
-    last_punch = get_last_punch_type(user_id)
-    if last_punch == punch_type:
-        raise ValueError(f"Cannot punch {punch_type} twice in a row. Last punch was also {punch_type}.")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO punch_record (user_id, punch_type, location_lat, location_long) VALUES (%s, %s, %s, %s)",
-        (user_id, punch_type, lat, long)
-    )
+        INSERT INTO punch_record (user_id, punch_type, punch_time, location_lat, location_long)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (user_id, punch_type, datetime.now(), lat, long))
     conn.commit()
     cursor.close()
     conn.close()
 
-
-def get_punch_records(user_id):
+def get_all_punches():
     conn = get_db_connection()
-    query = """
-        SELECT punch_id, punch_type, punch_time
-        FROM punch_record
-        WHERE user_id = %s
-        ORDER BY punch_time DESC
-    """
-    df = pd.read_sql(query, conn, params=(user_id,))
+    df = pd.read_sql("""
+        SELECT u.full_name, pr.punch_type, pr.punch_time, pr.location_lat, pr.location_long
+        FROM punch_record pr
+        JOIN users u ON pr.user_id = u.user_id
+        ORDER BY pr.punch_time DESC
+    """, conn)
     conn.close()
     return df
 
+# ==========================
+# LOCATION CAPTURE
+# ==========================
+def get_user_location():
+    location_js = """
+    <script>
+    function sendLocationToStreamlit() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const coords = {
+                        lat: position.coords.latitude,
+                        long: position.coords.longitude
+                    };
+                    const streamlitEvent = new CustomEvent("streamlit:location", {detail: coords});
+                    window.dispatchEvent(streamlitEvent);
+                },
+                function(error) {
+                    const errorMsg = { error: error.message };
+                    const streamlitEvent = new CustomEvent("streamlit:location", {detail: errorMsg});
+                    window.dispatchEvent(streamlitEvent);
+                }
+            );
+        } else {
+            const errorMsg = { error: "Geolocation is not supported by this browser." };
+            const streamlitEvent = new CustomEvent("streamlit:location", {detail: errorMsg});
+            window.dispatchEvent(streamlitEvent);
+        }
+    }
+    sendLocationToStreamlit();
+    </script>
+    """
+    components.html(location_js, height=0)
 
-def calculate_hours(df):
-    df_sorted = df.sort_values(by="punch_time")
-    sessions = []
-    
-    in_time = None
-    for _, row in df_sorted.iterrows():
-        if row['punch_type'] == 'IN':
-            in_time = row['punch_time']
-        elif row['punch_type'] == 'OUT' and in_time:
-            duration = (row['punch_time'] - in_time).total_seconds() / 3600
-            sessions.append({
-                'Punch In': in_time,
-                'Punch Out': row['punch_time'],
-                'Hours Worked': round(duration, 2)
-            })
-            in_time = None
-    return pd.DataFrame(sessions)
+# ==========================
+# MAIN APP
+# ==========================
+st.set_page_config(page_title="Punch Clock System", layout="wide")
+st.title("🕒 Employee Punch Clock System")
 
-# ----------------------
-# STREAMLIT UI
-# ----------------------
-st.title("HR Punch In/Out Tracker")
+# Simulated logged-in user
+# In production, you would use a login system
+st.session_state.user_id = 1
+st.session_state.full_name = "John Doe"
 
-# State management for login
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.user_id = None
-    st.session_state.user_name = None
+# Initialize session state for location
+if "location" not in st.session_state:
+    st.session_state.location = None
 
-# ----------------------
-# LOGIN & REGISTER
-# ----------------------
-if not st.session_state.logged_in:
-    tab1, tab2 = st.tabs(["Login", "Register"])
+st.subheader("Step 1: Capture Location")
+st.info("Please allow browser location access to punch in/out.")
 
-    with tab1:
-        st.subheader("Login")
-        users = get_users()
-        user_dict = {name: uid for uid, name in users}
+# Capture location
+get_user_location()
 
-        if users:
-            selected_user = st.selectbox("Select your name", [name for _, name in users])
-            if st.button("Login"):
-                st.session_state.logged_in = True
-                st.session_state.user_id = user_dict[selected_user]
-                st.session_state.user_name = selected_user
-                st.success(f"Welcome back, {selected_user}!")
-        else:
-            st.info("No users registered yet. Please register first.")
+# Temporary placeholder for demonstration (simulate location being set)
+if st.button("Simulate Location Capture"):
+    st.session_state.location = {"lat": 1.3521, "long": 103.8198}  # Example Singapore location
 
-    with tab2:
-        st.subheader("Register")
-        new_name = st.text_input("Full Name")
-        if st.button("Register"):
-            if new_name.strip() == "":
-                st.error("Name cannot be empty")
-            else:
-                register_user(new_name.strip())
-                st.success(f"Registered successfully: {new_name}")
+if st.session_state.location:
+    st.success(f"📍 Location Captured: {st.session_state.location['lat']}, {st.session_state.location['long']}")
 else:
-    st.sidebar.success(f"Logged in as: {st.session_state.user_name}")
+    st.warning("Waiting for location...")
 
-    # ----------------------
-    # Punch In / Out Buttons with Validation
-    # ----------------------
-    st.subheader("Punch In / Out")
-    last_punch = get_last_punch_type(st.session_state.user_id)
+# ==========================
+# PUNCH IN / OUT LOGIC
+# ==========================
+st.subheader("Step 2: Punch In / Punch Out")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if last_punch == "IN":
-            st.button("Punch In", disabled=True)
-        else:
-            if st.button("Punch In"):
-                try:
-                    punch(st.session_state.user_id, "IN")
-                    st.success("Punched IN successfully!")
-                except ValueError as e:
-                    st.error(str(e))
+last_punch = get_last_punch(st.session_state.user_id)
 
-    with col2:
-        if last_punch != "IN":
-            st.button("Punch Out", disabled=True)
-        else:
-            if st.button("Punch Out"):
-                try:
-                    punch(st.session_state.user_id, "OUT")
-                    st.warning("Punched OUT successfully!")
-                except ValueError as e:
-                    st.error(str(e))
+col1, col2 = st.columns(2)
 
-    # ----------------------
-    # Attendance Table
-    # ----------------------
-    st.subheader("Attendance Records")
-    records_df = get_punch_records(st.session_state.user_id)
-
-    if not records_df.empty:
-        hours_df = calculate_hours(records_df)
-        st.write("### Raw Punch Records")
-        st.dataframe(records_df)
-
-        st.write("### Tabulated Hours")
-        st.dataframe(hours_df)
+with col1:
+    if last_punch == "IN":
+        st.button("Punch In", disabled=True)
     else:
-        st.info("No punch records yet.")
+        if st.button("Punch In"):
+            if st.session_state.location:
+                lat, long = st.session_state.location["lat"], st.session_state.location["long"]
+                punch(st.session_state.user_id, "IN", lat, long)
+                st.success(f"Punched IN at {lat}, {long}")
+            else:
+                st.error("Location not available. Please enable location services.")
 
-    if st.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.user_id = None
-        st.session_state.user_name = None
-        st.experimental_rerun()
+with col2:
+    if last_punch != "IN":
+        st.button("Punch Out", disabled=True)
+    else:
+        if st.button("Punch Out"):
+            if st.session_state.location:
+                lat, long = st.session_state.location["lat"], st.session_state.location["long"]
+                punch(st.session_state.user_id, "OUT", lat, long)
+                st.success(f"Punched OUT at {lat}, {long}")
+            else:
+                st.error("Location not available. Please enable location services.")
+
+# ==========================
+# ADMIN VIEW: STAFF PUNCH LOCATIONS
+# ==========================
+st.subheader("📍 Staff Punch Locations")
+
+df = get_all_punches()
+st.dataframe(df)
+
+if not df.empty:
+    st.map(df[["location_lat", "location_long"]])
+else:
+    st.info("No punch records found.")
