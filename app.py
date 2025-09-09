@@ -12,7 +12,7 @@ def get_db_connection():
     return mysql.connector.connect(
         host="127.0.0.1",
         user="root",
-        password="root",  # change if needed
+        password="root",
         database="mydb",
         port=3306
     )
@@ -120,7 +120,7 @@ tab1, tab2 = st.tabs(["Login", "Register"])
 with tab1:
     st.subheader("Login")
     login_name = st.text_input("Full Name", key="login_name")
-    login_pw = st.text_input("Password", type="password", key="login_pw")
+    login_pw = st.text_input("Password", type="password", key="login_pw")  # Password field
     if st.button("Login"):
         if login_name and login_pw:
             user_id = login_user(login_name, login_pw)
@@ -136,7 +136,7 @@ with tab1:
 with tab2:
     st.subheader("Register")
     reg_name = st.text_input("Full Name", key="reg_name")
-    reg_pw = st.text_input("Password", type="password", key="reg_pw")
+    reg_pw = st.text_input("Password", type="password", key="reg_pw")  # Password field
     roles = get_roles()
     role_options = {r["role_name"]: r["role_id"] for r in roles}
     selected_role = st.selectbox("Role", options=list(role_options.keys()))
