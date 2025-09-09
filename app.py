@@ -15,6 +15,7 @@ def get_db_connection():
         port=3306
     )
 
+
 # ----------------------
 # HELPER FUNCTIONS
 # ----------------------
@@ -37,7 +38,27 @@ def get_users():
     return users
 
 
+def get_last_punch_type(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT punch_type 
+        FROM punch_record 
+        WHERE user_id = %s 
+        ORDER BY punch_time DESC 
+        LIMIT 1
+    """, (user_id,))
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result[0] if result else None
+
+
 def punch(user_id, punch_type, lat=None, long=None):
+    last_punch = get_last_punch_type(user_id)
+    if last_punch == punch_type:
+        raise ValueError(f"Cannot punch {punch_type} twice in a row. Last punch was also {punch_type}.")
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -125,19 +146,33 @@ else:
     st.sidebar.success(f"Logged in as: {st.session_state.user_name}")
 
     # ----------------------
-    # Punch In / Out Buttons
+    # Punch In / Out Buttons with Validation
     # ----------------------
     st.subheader("Punch In / Out")
+    last_punch = get_last_punch_type(st.session_state.user_id)
+
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Punch In"):
-            punch(st.session_state.user_id, "IN")
-            st.success("Punched IN successfully!")
+        if last_punch == "IN":
+            st.button("Punch In", disabled=True)
+        else:
+            if st.button("Punch In"):
+                try:
+                    punch(st.session_state.user_id, "IN")
+                    st.success("Punched IN successfully!")
+                except ValueError as e:
+                    st.error(str(e))
 
     with col2:
-        if st.button("Punch Out"):
-            punch(st.session_state.user_id, "OUT")
-            st.warning("Punched OUT successfully!")
+        if last_punch != "IN":
+            st.button("Punch Out", disabled=True)
+        else:
+            if st.button("Punch Out"):
+                try:
+                    punch(st.session_state.user_id, "OUT")
+                    st.warning("Punched OUT successfully!")
+                except ValueError as e:
+                    st.error(str(e))
 
     # ----------------------
     # Attendance Table
