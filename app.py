@@ -10,8 +10,8 @@ def get_db_connection():
     return mysql.connector.connect(
         host="127.0.0.1",
         user="root",
-        password="",  # if no password, leave as empty string
-        database="tic",
+        password="root",  # if no password, leave as empty string
+        database="mydb",
         port=3306
     )
 
