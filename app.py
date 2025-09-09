@@ -12,7 +12,7 @@ def get_db_connection():
     return mysql.connector.connect(
         host="127.0.0.1",
         user="root",
-        password="root",
+        password="root",  # change if needed
         database="mydb",
         port=3306
     )
@@ -116,18 +116,23 @@ if "user_id" not in st.session_state:
 
 tab1, tab2 = st.tabs(["Login", "Register"])
 
+# -------- Login Tab --------
 with tab1:
     st.subheader("Login")
     login_name = st.text_input("Full Name", key="login_name")
     login_pw = st.text_input("Password", type="password", key="login_pw")
     if st.button("Login"):
-        user_id = login_user(login_name, login_pw)
-        if user_id:
-            st.session_state.user_id = user_id
-            st.success(f"Logged in as {login_name}")
+        if login_name and login_pw:
+            user_id = login_user(login_name, login_pw)
+            if user_id:
+                st.session_state.user_id = user_id
+                st.success(f"Logged in as {login_name}")
+            else:
+                st.error("Invalid credentials")
         else:
-            st.error("Invalid credentials")
+            st.error("Please enter full name and password")
 
+# -------- Register Tab --------
 with tab2:
     st.subheader("Register")
     reg_name = st.text_input("Full Name", key="reg_name")
